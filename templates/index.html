@@ -274,6 +274,7 @@
     </div>
 
     <div id="viewer-controls">
+      <button id="btn-spin">Auto-spin</button>
       <button id="btn-wireframe">Wireframe</button>
       <button id="btn-reset">Reset view</button>
     </div>
@@ -295,22 +296,27 @@ container.appendChild(renderer.domElement);
 const scene  = new THREE.Scene();
 scene.background = new THREE.Color(0x090910);
 
-const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
-camera.position.set(0, 0, 3.5);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 100);
+camera.position.set(0, 0, 3);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
+controls.enableDamping  = true;
+controls.dampingFactor  = 0.06;
+controls.autoRotate     = false;
+controls.autoRotateSpeed = 1.5;
+controls.target.set(0, 0, 0);
+controls.update();
 
-scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(2, 3, 4);
-scene.add(dirLight);
-
-// Grid helper (subtle)
-const grid = new THREE.GridHelper(6, 20, 0x1e1e2e, 0x1e1e2e);
-grid.position.y = -1.2;
-scene.add(grid);
+// Lights — front, back, top so texture is visible from all orbit angles
+scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+const lights = [
+  [3, 3, 4], [-3, 2, 4], [0, -2, 3], [0, 3, -3]
+];
+lights.forEach(([x, y, z]) => {
+  const l = new THREE.DirectionalLight(0xffffff, 0.5);
+  l.position.set(x, y, z);
+  scene.add(l);
+});
 
 let currentObject = null;
 let isWireframe   = false;
@@ -332,6 +338,15 @@ new ResizeObserver(resizeRenderer).observe(container);
 })();
 
 // ── Load OBJ+MTL ────────────────────────────────────────────────────────────
+function resetCamera() {
+  controls.autoRotate = false;
+  document.getElementById('btn-spin').textContent = 'Auto-spin';
+  document.getElementById('btn-spin').classList.remove('active');
+  controls.target.set(0, 0, 0);
+  camera.position.set(0, 0, 3);
+  controls.update();
+}
+
 function loadModel(objUrl, mtlUrl) {
   if (currentObject) { scene.remove(currentObject); currentObject = null; }
 
@@ -341,31 +356,33 @@ function loadModel(objUrl, mtlUrl) {
     const objLoader = new OBJLoader();
     objLoader.setMaterials(materials);
     objLoader.load(objUrl, obj => {
-      // Center and scale to fit in a 2-unit box
+      // Center at origin
       const box    = new THREE.Box3().setFromObject(obj);
       const center = box.getCenter(new THREE.Vector3());
       const size   = box.getSize(new THREE.Vector3());
-      // Scale based on XY only so depth doesn't shrink the whole mesh
-      const xyMax  = Math.max(size.x, size.y);
       obj.position.sub(center);
+
+      // Scale so the XY face fills roughly 2 units
+      const xyMax = Math.max(size.x, size.y);
       obj.scale.multiplyScalar(2 / xyMax);
 
-      // Make mesh double-sided so it's visible from any angle
+      // Double-sided so mesh is visible when orbiting around
       obj.traverse(child => {
-        if (child.isMesh) {
-          child.material.side = THREE.DoubleSide;
-        }
+        if (child.isMesh) child.material.side = THREE.DoubleSide;
       });
 
       scene.add(obj);
       currentObject = obj;
 
-      // Slight angle so depth is visible, but still mostly front-facing
+      // Start with a top-front angle so depth is apparent
       controls.target.set(0, 0, 0);
-      camera.position.set(0.8, 0.5, 3.2);
-      camera.up.set(0, 1, 0);
-      camera.lookAt(0, 0, 0);
+      camera.position.set(0, 0.6, 3);
       controls.update();
+
+      // Auto-spin on load so the 3D shape is immediately visible
+      controls.autoRotate = true;
+      document.getElementById('btn-spin').textContent = 'Stop spin';
+      document.getElementById('btn-spin').classList.add('active');
 
       document.getElementById('viewer-placeholder').style.display = 'none';
       document.getElementById('viewer-controls').style.display    = 'flex';
@@ -384,13 +401,14 @@ document.getElementById('btn-wireframe').addEventListener('click', function() {
   }
 });
 
-document.getElementById('btn-reset').addEventListener('click', () => {
-  controls.target.set(0, 0, 0);
-  camera.position.set(0, 0, 3.5);
-  camera.up.set(0, 1, 0);
-  camera.lookAt(0, 0, 0);
-  controls.update();
+// Auto-spin toggle
+document.getElementById('btn-spin').addEventListener('click', function() {
+  controls.autoRotate = !controls.autoRotate;
+  this.textContent = controls.autoRotate ? 'Stop spin' : 'Auto-spin';
+  this.classList.toggle('active', controls.autoRotate);
 });
+
+document.getElementById('btn-reset').addEventListener('click', resetCamera);
 
 // ── Upload & convert ─────────────────────────────────────────────────────────
 const fileInput    = document.getElementById('file-input');
