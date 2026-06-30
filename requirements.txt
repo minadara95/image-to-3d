@@ -1,3 +1,4 @@
+# Core
 torch
 torchvision
 transformers
@@ -5,3 +6,11 @@ Pillow
 numpy
 scipy
 flask
+trimesh
+
+# TripoSR — full 360° 3D reconstruction (recommended)
+# Install separately after the above:
+#   pip install git+https://github.com/VAST-AI-Research/TripoSR
+#   pip install rembg   (background removal, required by TripoSR)
+#
+# Without TripoSR the app falls back to depth-map (front face only).

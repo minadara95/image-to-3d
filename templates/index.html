@@ -285,6 +285,7 @@
 import * as THREE from 'three';
 import { OBJLoader }      from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader }      from 'three/addons/loaders/MTLLoader.js';
+import { GLTFLoader }     from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls }  from 'three/addons/controls/OrbitControls.js';
 
 // ── Three.js scene ──────────────────────────────────────────────────────────
@@ -320,6 +321,7 @@ lights.forEach(([x, y, z]) => {
 
 let currentObject = null;
 let isWireframe   = false;
+let isSpinning    = false;
 
 function resizeRenderer() {
   const w = container.clientWidth;
@@ -333,64 +335,70 @@ new ResizeObserver(resizeRenderer).observe(container);
 
 (function animate() {
   requestAnimationFrame(animate);
+  if (currentObject && isSpinning) currentObject.rotation.y += 0.008;
   controls.update();
   renderer.render(scene, camera);
 })();
 
-// ── Load OBJ+MTL ────────────────────────────────────────────────────────────
-function resetCamera() {
-  controls.autoRotate = false;
-  document.getElementById('btn-spin').textContent = 'Auto-spin';
-  document.getElementById('btn-spin').classList.remove('active');
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function fitAndShow(obj) {
+  const box    = new THREE.Box3().setFromObject(obj);
+  const center = box.getCenter(new THREE.Vector3());
+  const size   = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  obj.position.sub(center);
+  obj.scale.multiplyScalar(2 / maxDim);
+  obj.traverse(child => {
+    if (child.isMesh) {
+      child.material.side = THREE.DoubleSide;
+      if (child.geometry.attributes.color) {
+        child.material.vertexColors = true;
+      }
+    }
+  });
+  scene.add(obj);
+  currentObject = obj;
+
   controls.target.set(0, 0, 0);
-  camera.position.set(0, 0, 3);
+  camera.position.set(0, 0.4, 3);
+  controls.update();
+
+  isSpinning = true;
+  document.getElementById('btn-spin').textContent = 'Stop spin';
+  document.getElementById('btn-spin').classList.add('active');
+  document.getElementById('viewer-placeholder').style.display = 'none';
+  document.getElementById('viewer-controls').style.display    = 'flex';
+}
+
+function resetCamera() {
+  controls.target.set(0, 0, 0);
+  camera.position.set(0, 0.4, 3);
   controls.update();
 }
 
-function loadModel(objUrl, mtlUrl) {
+// ── Loaders ───────────────────────────────────────────────────────────────────
+function loadGLB(url) {
   if (currentObject) { scene.remove(currentObject); currentObject = null; }
+  new GLTFLoader().load(url, gltf => fitAndShow(gltf.scene));
+}
 
-  const mtlLoader = new MTLLoader();
-  mtlLoader.load(mtlUrl, materials => {
+function loadOBJ(objUrl, mtlUrl) {
+  if (currentObject) { scene.remove(currentObject); currentObject = null; }
+  new MTLLoader().load(mtlUrl, materials => {
     materials.preload();
-    const objLoader = new OBJLoader();
-    objLoader.setMaterials(materials);
-    objLoader.load(objUrl, obj => {
-      // Center at origin
-      const box    = new THREE.Box3().setFromObject(obj);
-      const center = box.getCenter(new THREE.Vector3());
-      const size   = box.getSize(new THREE.Vector3());
-      obj.position.sub(center);
-
-      // Scale so the XY face fills roughly 2 units
-      const xyMax = Math.max(size.x, size.y);
-      obj.scale.multiplyScalar(2 / xyMax);
-
-      // Double-sided so mesh is visible when orbiting around
-      obj.traverse(child => {
-        if (child.isMesh) child.material.side = THREE.DoubleSide;
-      });
-
-      scene.add(obj);
-      currentObject = obj;
-
-      // Start with a top-front angle so depth is apparent
-      controls.target.set(0, 0, 0);
-      camera.position.set(0, 0.6, 3);
-      controls.update();
-
-      // Auto-spin on load so the 3D shape is immediately visible
-      controls.autoRotate = true;
-      document.getElementById('btn-spin').textContent = 'Stop spin';
-      document.getElementById('btn-spin').classList.add('active');
-
-      document.getElementById('viewer-placeholder').style.display = 'none';
-      document.getElementById('viewer-controls').style.display    = 'flex';
-    });
+    const loader = new OBJLoader();
+    loader.setMaterials(materials);
+    loader.load(objUrl, obj => fitAndShow(obj));
   });
 }
 
-// Wireframe toggle
+// ── Controls ──────────────────────────────────────────────────────────────────
+document.getElementById('btn-spin').addEventListener('click', function() {
+  isSpinning = !isSpinning;
+  this.textContent = isSpinning ? 'Stop spin' : 'Auto-spin';
+  this.classList.toggle('active', isSpinning);
+});
+
 document.getElementById('btn-wireframe').addEventListener('click', function() {
   isWireframe = !isWireframe;
   this.classList.toggle('active', isWireframe);
@@ -399,13 +407,6 @@ document.getElementById('btn-wireframe').addEventListener('click', function() {
       if (child.isMesh) child.material.wireframe = isWireframe;
     });
   }
-});
-
-// Auto-spin toggle
-document.getElementById('btn-spin').addEventListener('click', function() {
-  controls.autoRotate = !controls.autoRotate;
-  this.textContent = controls.autoRotate ? 'Stop spin' : 'Auto-spin';
-  this.classList.toggle('active', controls.autoRotate);
 });
 
 document.getElementById('btn-reset').addEventListener('click', resetCamera);
@@ -496,9 +497,15 @@ convertBtn.addEventListener('click', async () => {
         setStatus('running', `<span class="spinner"></span> ${data.message}`);
       } else if (data.status === 'done') {
         clearInterval(poll);
-        setStatus('done', '✔ Model ready');
+        const label = data.model_type === 'glb' ? '✔ Model ready (TripoSR)' : '✔ Model ready (depth-map)';
+        setStatus('done', label);
         convertBtn.disabled = false;
-        loadModel(data.obj + '?t=' + Date.now(), data.mtl + '?t=' + Date.now());
+        const t = Date.now();
+        if (data.model_type === 'glb') {
+          loadGLB(data.model + '?t=' + t);
+        } else {
+          loadOBJ(data.model + '?t=' + t, data.mtl + '?t=' + t);
+        }
       } else if (data.status === 'error') {
         clearInterval(poll);
         setStatus('error', '✖ ' + data.message);
