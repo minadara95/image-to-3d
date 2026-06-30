@@ -76,71 +76,107 @@ def estimate_depth(image: Image.Image) -> np.ndarray:
 def build_mesh(
     depth: np.ndarray,
     texture_image: Image.Image,
-    depth_scale: float = 1.0,
-    resolution: int = 512,
+    depth_scale: float = 0.3,
+    resolution: int = 256,
 ) -> tuple[list, list, list, list]:
     """
-    Build a dense grid mesh from a depth map.
+    Build a solid bas-relief mesh from a depth map.
 
-    Returns (vertices, uvs, normals, faces) where each face is a quad split
-    into two triangles referencing (vertex_idx, uv_idx, normal_idx) tuples.
+    Produces a block with:
+      - Front face: displaced by depth (textured)
+      - Back face:  flat plane behind the front
+      - Four side walls connecting front edges to back
 
-    depth_scale   — multiplies Z values; larger = taller/deeper model
-    resolution    — max edge length (in pixels) of the sampled grid
+    This looks like a sculpted physical plaque rather than a warped sheet.
     """
     h, w = depth.shape
-
-    # Subsample so we don't generate millions of vertices
     step = max(1, max(h, w) // resolution)
     rows = np.arange(0, h, step)
     cols = np.arange(0, w, step)
-
     nr, nc = len(rows), len(cols)
-    print(f"Building {nr}×{nc} grid mesh …")
+    print(f"Building {nr}×{nc} bas-relief mesh …")
 
-    # Build vertex grid
-    # X in [-1, 1], Y in [-aspect, aspect], Z from depth
     aspect = h / w
     xs = np.linspace(-1.0, 1.0, nc)
-    ys = np.linspace(aspect, -aspect, nr)   # flip Y so top of image is up
-    zs = depth[np.ix_(rows, cols)] * depth_scale
+    ys = np.linspace(aspect, -aspect, nr)
+    zs = depth[np.ix_(rows, cols)] * depth_scale  # front-face Z (0 = far, depth_scale = near)
 
-    # Flatten to lists
-    vertices = []
-    uvs = []
-    for ri, row in enumerate(rows):
-        for ci, col in enumerate(cols):
+    BACK_Z = -depth_scale * 0.5   # flat back face sits behind the deepest point
+
+    # ── Vertices ──────────────────────────────────────────────────────────────
+    # Block 0:  front face  (nr*nc vertices)
+    # Block 1:  back face   (nr*nc vertices, same XY, flat Z = BACK_Z)
+    vertices: list = []
+    uvs:      list = []
+
+    for ri in range(nr):
+        for ci in range(nc):
+            u = cols[ci] / max(w - 1, 1)
+            v = 1.0 - rows[ri] / max(h - 1, 1)
             vertices.append((xs[ci], ys[ri], float(zs[ri, ci])))
-            uvs.append((col / (w - 1), 1.0 - row / (h - 1)))   # OBJ UVs: origin bottom-left
+            uvs.append((u, v))
 
-    # One flat normal for now (smooth normals per-face computed later)
+    for ri in range(nr):
+        for ci in range(nc):
+            u = cols[ci] / max(w - 1, 1)
+            v = 1.0 - rows[ri] / max(h - 1, 1)
+            vertices.append((xs[ci], ys[ri], BACK_Z))
+            uvs.append((u, v))
+
     normals = [(0.0, 0.0, 1.0)]
 
-    # Build faces — skip quads where the depth jump is too large (edge "walls")
-    faces = []
-    # Threshold: skip a quad if any adjacent vertex differs by more than this
-    # fraction of total depth range. Removes stretched triangles at depth boundaries.
-    EDGE_THRESHOLD = 0.12
+    # helpers — OBJ indices are 1-based
+    def fi(ri, ci): return ri * nc + ci + 1
+    def bi(ri, ci): return nr * nc + ri * nc + ci + 1
 
-    def idx(ri, ci):
-        return ri * nc + ci + 1   # OBJ is 1-indexed
+    faces: list = []
 
+    # ── Front face ─────────────────────────────────────────────────────────────
+    SKIP = 0.15 * depth_scale   # skip quads with steep depth jump (seam artifacts)
     for ri in range(nr - 1):
         for ci in range(nc - 1):
-            z_tl = float(zs[ri,   ci])
-            z_tr = float(zs[ri,   ci+1])
-            z_bl = float(zs[ri+1, ci])
-            z_br = float(zs[ri+1, ci+1])
-            z_vals = [z_tl, z_tr, z_bl, z_br]
-            if max(z_vals) - min(z_vals) > EDGE_THRESHOLD * depth_scale:
-                continue   # skip — this quad spans a depth discontinuity
+            corners = [float(zs[ri,ci]), float(zs[ri,ci+1]),
+                       float(zs[ri+1,ci]), float(zs[ri+1,ci+1])]
+            if max(corners) - min(corners) > SKIP:
+                continue
+            tl, tr = fi(ri,ci),   fi(ri,ci+1)
+            bl, br = fi(ri+1,ci), fi(ri+1,ci+1)
+            faces.append(((tl,tl,1),(bl,bl,1),(tr,tr,1)))
+            faces.append(((tr,tr,1),(bl,bl,1),(br,br,1)))
 
-            tl = idx(ri,   ci)
-            tr = idx(ri,   ci+1)
-            bl = idx(ri+1, ci)
-            br = idx(ri+1, ci+1)
-            faces.append(((tl, tl, 1), (bl, bl, 1), (tr, tr, 1)))
-            faces.append(((tr, tr, 1), (bl, bl, 1), (br, br, 1)))
+    # ── Back face (reversed winding) ───────────────────────────────────────────
+    for ri in range(nr - 1):
+        for ci in range(nc - 1):
+            tl, tr = bi(ri,ci),   bi(ri,ci+1)
+            bl, br = bi(ri+1,ci), bi(ri+1,ci+1)
+            faces.append(((tl,tl,1),(tr,tr,1),(bl,bl,1)))
+            faces.append(((tr,tr,1),(br,br,1),(bl,bl,1)))
+
+    # ── Side walls ─────────────────────────────────────────────────────────────
+    # Top (ri=0)
+    for ci in range(nc - 1):
+        ftl, ftr = fi(0,ci), fi(0,ci+1)
+        btl, btr = bi(0,ci), bi(0,ci+1)
+        faces.append(((ftl,ftl,1),(btl,btl,1),(ftr,ftr,1)))
+        faces.append(((ftr,ftr,1),(btl,btl,1),(btr,btr,1)))
+    # Bottom (ri=nr-1)
+    for ci in range(nc - 1):
+        fbl, fbr = fi(nr-1,ci), fi(nr-1,ci+1)
+        bbl, bbr = bi(nr-1,ci), bi(nr-1,ci+1)
+        faces.append(((fbl,fbl,1),(fbr,fbr,1),(bbl,bbl,1)))
+        faces.append(((fbr,fbr,1),(bbr,bbr,1),(bbl,bbl,1)))
+    # Left (ci=0)
+    for ri in range(nr - 1):
+        ftl, fbl = fi(ri,0), fi(ri+1,0)
+        btl, bbl = bi(ri,0), bi(ri+1,0)
+        faces.append(((ftl,ftl,1),(fbl,fbl,1),(btl,btl,1)))
+        faces.append(((fbl,fbl,1),(bbl,bbl,1),(btl,btl,1)))
+    # Right (ci=nc-1)
+    for ri in range(nr - 1):
+        ftr, fbr = fi(ri,nc-1), fi(ri+1,nc-1)
+        btr, bbr = bi(ri,nc-1), bi(ri+1,nc-1)
+        faces.append(((ftr,ftr,1),(btr,btr,1),(fbr,fbr,1)))
+        faces.append(((fbr,fbr,1),(btr,btr,1),(bbr,bbr,1)))
 
     return vertices, uvs, normals, faces
 

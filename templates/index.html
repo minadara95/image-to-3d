@@ -302,8 +302,6 @@ camera.position.set(0, 0, 3);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping  = true;
 controls.dampingFactor  = 0.06;
-controls.autoRotate     = false;
-controls.autoRotateSpeed = 1.5;
 controls.target.set(0, 0, 0);
 controls.update();
 
@@ -320,6 +318,7 @@ lights.forEach(([x, y, z]) => {
 
 let currentObject = null;
 let isWireframe   = false;
+let isSpinning    = false;
 
 function resizeRenderer() {
   const w = container.clientWidth;
@@ -333,17 +332,15 @@ new ResizeObserver(resizeRenderer).observe(container);
 
 (function animate() {
   requestAnimationFrame(animate);
+  if (currentObject && isSpinning) currentObject.rotation.y += 0.008;
   controls.update();
   renderer.render(scene, camera);
 })();
 
 // ── Load OBJ+MTL ────────────────────────────────────────────────────────────
 function resetCamera() {
-  controls.autoRotate = false;
-  document.getElementById('btn-spin').textContent = 'Auto-spin';
-  document.getElementById('btn-spin').classList.remove('active');
   controls.target.set(0, 0, 0);
-  camera.position.set(0, 0, 3);
+  camera.position.set(0, 0.3, 3);
   controls.update();
 }
 
@@ -362,11 +359,10 @@ function loadModel(objUrl, mtlUrl) {
       const size   = box.getSize(new THREE.Vector3());
       obj.position.sub(center);
 
-      // Scale so the XY face fills roughly 2 units
+      // Scale by XY so the face fills ~2 units; depth stays proportional
       const xyMax = Math.max(size.x, size.y);
       obj.scale.multiplyScalar(2 / xyMax);
 
-      // Double-sided so mesh is visible when orbiting around
       obj.traverse(child => {
         if (child.isMesh) child.material.side = THREE.DoubleSide;
       });
@@ -374,15 +370,14 @@ function loadModel(objUrl, mtlUrl) {
       scene.add(obj);
       currentObject = obj;
 
-      // Start with a top-front angle so depth is apparent
-      controls.target.set(0, 0, 0);
-      camera.position.set(0, 0.6, 3);
-      controls.update();
+      // Camera looks straight at the front face
+      resetCamera();
 
-      // Auto-spin on load so the 3D shape is immediately visible
-      controls.autoRotate = true;
-      document.getElementById('btn-spin').textContent = 'Stop spin';
-      document.getElementById('btn-spin').classList.add('active');
+      // Spin the object (not the camera) so front face stays facing us initially
+      isSpinning = true;
+      const btn = document.getElementById('btn-spin');
+      btn.textContent = 'Stop spin';
+      btn.classList.add('active');
 
       document.getElementById('viewer-placeholder').style.display = 'none';
       document.getElementById('viewer-controls').style.display    = 'flex';
@@ -401,11 +396,11 @@ document.getElementById('btn-wireframe').addEventListener('click', function() {
   }
 });
 
-// Auto-spin toggle
+// Spin toggle — rotates the object, not the camera
 document.getElementById('btn-spin').addEventListener('click', function() {
-  controls.autoRotate = !controls.autoRotate;
-  this.textContent = controls.autoRotate ? 'Stop spin' : 'Auto-spin';
-  this.classList.toggle('active', controls.autoRotate);
+  isSpinning = !isSpinning;
+  this.textContent = isSpinning ? 'Stop spin' : 'Auto-spin';
+  this.classList.toggle('active', isSpinning);
 });
 
 document.getElementById('btn-reset').addEventListener('click', resetCamera);
