@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image to 3D</title>
+
+  <!-- Three.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.163.0/examples/js/loaders/OBJLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.163.0/examples/js/loaders/MTLLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.163.0/examples/js/controls/OrbitControls.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f13;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      padding: 20px 32px;
+      border-bottom: 1px solid #1e1e2e;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header svg { flex-shrink: 0; }
+    header h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
+    header p  { font-size: 0.8rem; color: #64748b; margin-top: 2px; }
+
+    /* ── Layout ── */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    aside {
+      border-right: 1px solid #1e1e2e;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    .section-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #475569;
+      margin-bottom: 10px;
+    }
+
+    /* Drop zone */
+    #drop-zone {
+      border: 2px dashed #2d2d3f;
+      border-radius: 12px;
+      padding: 32px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    #drop-zone:hover, #drop-zone.drag-over {
+      border-color: #6366f1;
+      background: #1a1a2e;
+    }
+    #drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    #drop-zone .icon { font-size: 2rem; margin-bottom: 8px; }
+    #drop-zone p { font-size: 0.85rem; color: #64748b; }
+    #drop-zone strong { color: #a5b4fc; }
+
+    /* Preview */
+    #preview-wrap { display: none; }
+    #preview-img {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #1e1e2e;
+      object-fit: cover;
+      max-height: 180px;
+    }
+
+    /* Controls */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 0.8rem; color: #94a3b8; display: flex; justify-content: space-between; }
+    .field label span { color: #e2e8f0; font-weight: 500; }
+    input[type="range"] {
+      width: 100%;
+      accent-color: #6366f1;
+    }
+
+    /* Convert button */
+    #convert-btn {
+      padding: 12px;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    #convert-btn:hover:not(:disabled) { background: #4f46e5; }
+    #convert-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Status */
+    #status-box {
+      display: none;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+    #status-box.running  { background: #1e293b; border: 1px solid #334155; color: #94a3b8; }
+    #status-box.done     { background: #0f2a1e; border: 1px solid #166534; color: #86efac; }
+    #status-box.error    { background: #2a0f0f; border: 1px solid #991b1b; color: #fca5a5; }
+
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid #475569;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Hints */
+    .hints { font-size: 0.75rem; color: #475569; line-height: 1.6; }
+    .hints li { margin-left: 14px; margin-bottom: 4px; }
+
+    /* ── Viewer ── */
+    #viewer {
+      position: relative;
+      background: #090910;
+    }
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Overlay when empty */
+    #viewer-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: #1e1e2e;
+      pointer-events: none;
+    }
+    #viewer-placeholder svg { opacity: 0.15; }
+    #viewer-placeholder p { font-size: 0.85rem; opacity: 0.4; }
+
+    /* Viewer controls bar */
+    #viewer-controls {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      gap: 8px;
+    }
+    #viewer-controls button {
+      background: #1e1e2e;
+      border: 1px solid #2d2d3f;
+      color: #e2e8f0;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #viewer-controls button:hover { background: #2d2d3f; }
+
+    /* Wireframe toggle active */
+    #viewer-controls button.active { border-color: #6366f1; color: #a5b4fc; }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+    <path d="M14 2L26 8.5V19.5L14 26L2 19.5V8.5L14 2Z" stroke="#6366f1" stroke-width="1.5" fill="none"/>
+    <path d="M14 2V26M2 8.5L14 15L26 8.5" stroke="#6366f1" stroke-width="1" opacity="0.5"/>
+  </svg>
+  <div>
+    <h1>Image to 3D</h1>
+    <p>AI depth estimation → textured mesh</p>
+  </div>
+</header>
+
+<main>
+  <!-- ── Sidebar ── -->
+  <aside>
+
+    <div>
+      <div class="section-label">Input Image</div>
+      <div id="drop-zone">
+        <input type="file" id="file-input" accept="image/*" />
+        <div class="icon">🖼️</div>
+        <p><strong>Click or drag</strong> an image here</p>
+        <p>JPG, PNG, WEBP …</p>
+      </div>
+      <div id="preview-wrap" style="margin-top:12px">
+        <img id="preview-img" alt="preview" />
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Settings</div>
+      <div class="field">
+        <label>Depth scale <span id="scale-val">1.0</span></label>
+        <input type="range" id="depth-scale" min="0.2" max="3" step="0.1" value="1.0"
+               oninput="document.getElementById('scale-val').textContent = (+this.value).toFixed(1)" />
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Resolution <span id="res-val">256</span></label>
+        <input type="range" id="resolution" min="64" max="512" step="64" value="256"
+               oninput="document.getElementById('res-val').textContent = this.value" />
+      </div>
+    </div>
+
+    <button id="convert-btn" disabled>Convert to 3D</button>
+
+    <div id="status-box"></div>
+
+    <div>
+      <div class="section-label">Tips</div>
+      <ul class="hints">
+        <li>Clear foreground/background gives best depth</li>
+        <li>Raise Depth scale for flat landscapes</li>
+        <li>Lower Resolution for faster preview</li>
+        <li>Drag to orbit · Scroll to zoom · Right-drag to pan</li>
+      </ul>
+    </div>
+
+  </aside>
+
+  <!-- ── 3D Viewer ── -->
+  <div id="viewer">
+    <div id="canvas-container"></div>
+
+    <div id="viewer-placeholder">
+      <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+        <path d="M40 5L75 22.5V57.5L40 75L5 57.5V22.5L40 5Z"
+              stroke="white" stroke-width="2" fill="none"/>
+        <path d="M40 5V75M5 22.5L40 40L75 22.5" stroke="white" stroke-width="1"/>
+      </svg>
+      <p>Your 3D model will appear here</p>
+    </div>
+
+    <div id="viewer-controls">
+      <button id="btn-wireframe">Wireframe</button>
+      <button id="btn-reset">Reset view</button>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── Three.js scene ──────────────────────────────────────────────────────────
+const container = document.getElementById('canvas-container');
+const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+container.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x090910);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+camera.position.set(0, 0, 3.5);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(2, 3, 4);
+scene.add(dirLight);
+
+// Grid helper (subtle)
+const grid = new THREE.GridHelper(6, 20, 0x1e1e2e, 0x1e1e2e);
+grid.position.y = -1.2;
+scene.add(grid);
+
+let currentObject = null;
+let isWireframe   = false;
+
+function resizeRenderer() {
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resizeRenderer();
+new ResizeObserver(resizeRenderer).observe(container);
+
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// ── Load OBJ+MTL ────────────────────────────────────────────────────────────
+function loadModel(objUrl, mtlUrl) {
+  if (currentObject) { scene.remove(currentObject); currentObject = null; }
+
+  const mtlLoader = new THREE.MTLLoader();
+  mtlLoader.load(mtlUrl, materials => {
+    materials.preload();
+    const objLoader = new THREE.OBJLoader();
+    objLoader.setMaterials(materials);
+    objLoader.load(objUrl, obj => {
+      // Center and scale to unit box
+      const box    = new THREE.Box3().setFromObject(obj);
+      const center = box.getCenter(new THREE.Vector3());
+      const size   = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      obj.position.sub(center);
+      obj.scale.multiplyScalar(2 / maxDim);
+
+      scene.add(obj);
+      currentObject = obj;
+
+      // Reset camera
+      camera.position.set(0, 0, 3.5);
+      controls.reset();
+
+      document.getElementById('viewer-placeholder').style.display = 'none';
+      document.getElementById('viewer-controls').style.display    = 'flex';
+    });
+  });
+}
+
+// Wireframe toggle
+document.getElementById('btn-wireframe').addEventListener('click', function() {
+  isWireframe = !isWireframe;
+  this.classList.toggle('active', isWireframe);
+  if (currentObject) {
+    currentObject.traverse(child => {
+      if (child.isMesh) child.material.wireframe = isWireframe;
+    });
+  }
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  camera.position.set(0, 0, 3.5);
+  controls.reset();
+});
+
+// ── Upload & convert ─────────────────────────────────────────────────────────
+const fileInput    = document.getElementById('file-input');
+const dropZone     = document.getElementById('drop-zone');
+const previewWrap  = document.getElementById('preview-wrap');
+const previewImg   = document.getElementById('preview-img');
+const convertBtn   = document.getElementById('convert-btn');
+const statusBox    = document.getElementById('status-box');
+
+let selectedFile = null;
+
+function showPreview(file) {
+  selectedFile = file;
+  const url = URL.createObjectURL(file);
+  previewImg.src = url;
+  previewWrap.style.display = 'block';
+  convertBtn.disabled = false;
+}
+
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) showPreview(e.target.files[0]);
+});
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) showPreview(file);
+});
+
+function setStatus(cls, html) {
+  statusBox.className = cls;
+  statusBox.innerHTML = html;
+  statusBox.style.display = 'block';
+}
+
+convertBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+
+  convertBtn.disabled = true;
+  setStatus('running', '<span class="spinner"></span> Uploading image…');
+
+  const form = new FormData();
+  form.append('image', selectedFile);
+  form.append('depth_scale', document.getElementById('depth-scale').value);
+  form.append('resolution',  document.getElementById('resolution').value);
+
+  let jobId;
+  try {
+    const res  = await fetch('/convert', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    jobId = data.job_id;
+  } catch (err) {
+    setStatus('error', '✖ ' + err.message);
+    convertBtn.disabled = false;
+    return;
+  }
+
+  // Poll for completion
+  const poll = setInterval(async () => {
+    try {
+      const res  = await fetch('/status/' + jobId);
+      const data = await res.json();
+
+      if (data.status === 'running' || data.status === 'pending') {
+        setStatus('running', `<span class="spinner"></span> ${data.message}`);
+      } else if (data.status === 'done') {
+        clearInterval(poll);
+        setStatus('done', '✔ Model ready');
+        convertBtn.disabled = false;
+        loadModel(data.obj + '?t=' + Date.now(), data.mtl + '?t=' + Date.now());
+      } else if (data.status === 'error') {
+        clearInterval(poll);
+        setStatus('error', '✖ ' + data.message);
+        convertBtn.disabled = false;
+      }
+    } catch {
+      clearInterval(poll);
+      setStatus('error', '✖ Server error while polling');
+      convertBtn.disabled = false;
+    }
+  }, 2000);
+});
+</script>
+
+</body>
+</html>
