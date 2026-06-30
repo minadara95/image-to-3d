@@ -341,20 +341,31 @@ function loadModel(objUrl, mtlUrl) {
     const objLoader = new OBJLoader();
     objLoader.setMaterials(materials);
     objLoader.load(objUrl, obj => {
-      // Center and scale to unit box
+      // Center and scale to fit in a 2-unit box
       const box    = new THREE.Box3().setFromObject(obj);
       const center = box.getCenter(new THREE.Vector3());
       const size   = box.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
+      // Scale based on XY only so depth doesn't shrink the whole mesh
+      const xyMax  = Math.max(size.x, size.y);
       obj.position.sub(center);
-      obj.scale.multiplyScalar(2 / maxDim);
+      obj.scale.multiplyScalar(2 / xyMax);
+
+      // Make mesh double-sided so it's visible from any angle
+      obj.traverse(child => {
+        if (child.isMesh) {
+          child.material.side = THREE.DoubleSide;
+        }
+      });
 
       scene.add(obj);
       currentObject = obj;
 
-      // Reset camera
+      // Aim camera straight at the front of the mesh (mesh lies in XY plane, Z = depth)
+      controls.target.set(0, 0, 0);
       camera.position.set(0, 0, 3.5);
-      controls.reset();
+      camera.up.set(0, 1, 0);
+      camera.lookAt(0, 0, 0);
+      controls.update();
 
       document.getElementById('viewer-placeholder').style.display = 'none';
       document.getElementById('viewer-controls').style.display    = 'flex';
@@ -374,8 +385,11 @@ document.getElementById('btn-wireframe').addEventListener('click', function() {
 });
 
 document.getElementById('btn-reset').addEventListener('click', () => {
+  controls.target.set(0, 0, 0);
   camera.position.set(0, 0, 3.5);
-  controls.reset();
+  camera.up.set(0, 1, 0);
+  camera.lookAt(0, 0, 0);
+  controls.update();
 });
 
 // ── Upload & convert ─────────────────────────────────────────────────────────
