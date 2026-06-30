@@ -92,7 +92,7 @@ def convert():
     if file.filename == "":
         return jsonify({"error": "Empty filename"}), 400
 
-    depth_scale = float(request.form.get("depth_scale", 1.0))
+    depth_scale = float(request.form.get("depth_scale", 0.3))
     resolution  = int(request.form.get("resolution",  256))
 
     # Save upload

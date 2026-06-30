@@ -3,4 +3,5 @@ torchvision
 transformers
 Pillow
 numpy
+scipy
 flask

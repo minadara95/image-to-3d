@@ -53,6 +53,14 @@ def estimate_depth(image: Image.Image) -> np.ndarray:
     d_min, d_max = depth.min(), depth.max()
     if d_max > d_min:
         depth = (depth - d_min) / (d_max - d_min)
+
+    # Smooth to reduce sharp cliffs that make the mesh look twisted
+    try:
+        from scipy.ndimage import gaussian_filter
+        depth = gaussian_filter(depth, sigma=2.0)
+    except ImportError:
+        pass  # scipy optional — mesh will still work, just less smooth
+
     return depth
 
 
