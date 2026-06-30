@@ -5,11 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Image to 3D</title>
 
-  <!-- Three.js via CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.163.0/examples/js/loaders/OBJLoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.163.0/examples/js/loaders/MTLLoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.163.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Three.js via ES modules (examples/js/* was removed after r152) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three":              "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+      "three/addons/":      "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+    }
+  }
+  </script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -276,7 +280,12 @@
   </div>
 </main>
 
-<script>
+<script type="module">
+import * as THREE from 'three';
+import { OBJLoader }      from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader }      from 'three/addons/loaders/MTLLoader.js';
+import { OrbitControls }  from 'three/addons/controls/OrbitControls.js';
+
 // ── Three.js scene ──────────────────────────────────────────────────────────
 const container = document.getElementById('canvas-container');
 const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -289,7 +298,7 @@ scene.background = new THREE.Color(0x090910);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
 camera.position.set(0, 0, 3.5);
 
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 
@@ -326,10 +335,10 @@ new ResizeObserver(resizeRenderer).observe(container);
 function loadModel(objUrl, mtlUrl) {
   if (currentObject) { scene.remove(currentObject); currentObject = null; }
 
-  const mtlLoader = new THREE.MTLLoader();
+  const mtlLoader = new MTLLoader();
   mtlLoader.load(mtlUrl, materials => {
     materials.preload();
-    const objLoader = new THREE.OBJLoader();
+    const objLoader = new OBJLoader();
     objLoader.setMaterials(materials);
     objLoader.load(objUrl, obj => {
       // Center and scale to unit box
