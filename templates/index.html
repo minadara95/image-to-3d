@@ -380,20 +380,30 @@ const statusBox    = document.getElementById('status-box');
 let selectedFile = null;
 
 function showPreview(file) {
+  console.log('[showPreview] called with:', file.name, file.type, file.size, 'bytes');
   selectedFile = file;
   const url = URL.createObjectURL(file);
+  console.log('[showPreview] blob URL:', url);
   previewImg.src = url;
   previewWrap.style.display = 'block';
   convertBtn.disabled = false;
+  console.log('[showPreview] preview shown, convert button enabled');
 }
 
-// inline onchange on the input calls this — more reliable than addEventListener in some browsers
 window.handleFileChange = function(input) {
+  console.log('[handleFileChange] fired, files:', input.files ? input.files.length : 'null');
   if (input.files && input.files[0]) showPreview(input.files[0]);
+  else console.warn('[handleFileChange] no files found');
 };
 
 fileInput.addEventListener('change', e => {
+  console.log('[change event] fired, files:', e.target.files ? e.target.files.length : 'null');
   if (e.target.files[0]) showPreview(e.target.files[0]);
+  else console.warn('[change event] no files found');
+});
+
+dropZone.addEventListener('click', () => {
+  console.log('[dropZone click] triggered');
 });
 
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
@@ -402,6 +412,7 @@ dropZone.addEventListener('drop', e => {
   e.preventDefault();
   dropZone.classList.remove('drag-over');
   const file = e.dataTransfer.files[0];
+  console.log('[drop] file dropped:', file ? file.name : 'none');
   if (file && file.type.startsWith('image/')) showPreview(file);
 });
 
