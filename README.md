@@ -19,11 +19,16 @@ pip install -r requirements.txt
 ```
 
 ### TripoSR install (full 3D — recommended)
+
+TripoSR is bundled in `_triposr_src/` (no separate pip install required).
+Just install its dependencies:
+
 ```bash
 pip install -r requirements.txt
-pip install rembg
-pip install git+https://github.com/VAST-AI-Research/TripoSR
+pip install "rembg[cpu]" omegaconf einops scikit-image
 ```
+
+> For NVIDIA GPU, replace `rembg[cpu]` with `rembg[gpu]` for faster background removal.
 
 > Model weights download automatically on first run (~1 GB for TripoSR, ~100 MB for depth model).
 > GPU (CUDA) is strongly recommended for TripoSR — CPU works but takes several minutes per image.

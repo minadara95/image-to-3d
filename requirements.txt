@@ -8,9 +8,8 @@ scipy
 flask
 trimesh
 
-# TripoSR — full 360° 3D reconstruction (recommended)
-# Install separately after the above:
-#   pip install git+https://github.com/VAST-AI-Research/TripoSR
-#   pip install rembg   (background removal, required by TripoSR)
-#
-# Without TripoSR the app falls back to depth-map (front face only).
+# TripoSR dependencies (bundled in _triposr_src/ — no separate repo clone needed)
+rembg[cpu]
+omegaconf
+einops
+scikit-image

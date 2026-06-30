@@ -9,3 +9,6 @@ static/outputs/
 *.ply
 *_texture.png
 .env
+_triposr_src/__pycache__/
+_triposr_src/**/__pycache__/
+_triposr_src/.git/

@@ -28,6 +28,13 @@ from PIL import Image
 # Backend 1 — TripoSR (full 3D)
 # ---------------------------------------------------------------------------
 
+def _ensure_triposr_path():
+    """Add the bundled TripoSR source to sys.path so `tsr` can be imported."""
+    triposr_src = Path(__file__).parent / "_triposr_src"
+    if triposr_src.exists() and str(triposr_src) not in sys.path:
+        sys.path.insert(0, str(triposr_src))
+
+
 def run_triposr(image: Image.Image, out_glb: Path, resolution: int = 256,
                 progress_cb=None) -> None:
     """
@@ -35,6 +42,7 @@ def run_triposr(image: Image.Image, out_glb: Path, resolution: int = 256,
 
     Raises ImportError if TripoSR / rembg are not installed.
     """
+    _ensure_triposr_path()
     import torch
     from tsr.system import TSR
     from tsr.utils import remove_background, resize_foreground
