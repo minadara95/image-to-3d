@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+static/uploads/
+static/outputs/
+*.obj
+*.mtl
+*.glb
+*.ply
+*_texture.png
+.env
