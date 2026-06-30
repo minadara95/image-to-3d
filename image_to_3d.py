@@ -49,17 +49,22 @@ def estimate_depth(image: Image.Image) -> np.ndarray:
 
     depth = np.array(depth_pil, dtype=np.float32)
 
-    # Normalize to [0, 1]
-    d_min, d_max = depth.min(), depth.max()
-    if d_max > d_min:
-        depth = (depth - d_min) / (d_max - d_min)
+    # Percentile normalization — clips outliers so extreme pixels don't dominate
+    p2, p98 = np.percentile(depth, 2), np.percentile(depth, 98)
+    depth = np.clip(depth, p2, p98)
+    if p98 > p2:
+        depth = (depth - p2) / (p98 - p2)
 
-    # Smooth to reduce sharp cliffs that make the mesh look twisted
+    # Smooth to soften depth transitions
     try:
         from scipy.ndimage import gaussian_filter
-        depth = gaussian_filter(depth, sigma=2.0)
+        depth = gaussian_filter(depth, sigma=1.5)
+        # Re-normalize after blur
+        d_min, d_max = depth.min(), depth.max()
+        if d_max > d_min:
+            depth = (depth - d_min) / (d_max - d_min)
     except ImportError:
-        pass  # scipy optional — mesh will still work, just less smooth
+        pass
 
     return depth
 
@@ -111,20 +116,30 @@ def build_mesh(
     # One flat normal for now (smooth normals per-face computed later)
     normals = [(0.0, 0.0, 1.0)]
 
-    # Build faces (two triangles per quad)
+    # Build faces — skip quads where the depth jump is too large (edge "walls")
     faces = []
+    # Threshold: skip a quad if any adjacent vertex differs by more than this
+    # fraction of total depth range. Removes stretched triangles at depth boundaries.
+    EDGE_THRESHOLD = 0.12
+
     def idx(ri, ci):
         return ri * nc + ci + 1   # OBJ is 1-indexed
 
     for ri in range(nr - 1):
         for ci in range(nc - 1):
+            z_tl = float(zs[ri,   ci])
+            z_tr = float(zs[ri,   ci+1])
+            z_bl = float(zs[ri+1, ci])
+            z_br = float(zs[ri+1, ci+1])
+            z_vals = [z_tl, z_tr, z_bl, z_br]
+            if max(z_vals) - min(z_vals) > EDGE_THRESHOLD * depth_scale:
+                continue   # skip — this quad spans a depth discontinuity
+
             tl = idx(ri,   ci)
             tr = idx(ri,   ci+1)
             bl = idx(ri+1, ci)
             br = idx(ri+1, ci+1)
-            # Triangle 1: top-left, bottom-left, top-right
             faces.append(((tl, tl, 1), (bl, bl, 1), (tr, tr, 1)))
-            # Triangle 2: top-right, bottom-left, bottom-right
             faces.append(((tr, tr, 1), (bl, bl, 1), (br, br, 1)))
 
     return vertices, uvs, normals, faces
