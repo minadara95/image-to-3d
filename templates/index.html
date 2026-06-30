@@ -77,6 +77,9 @@
       border-color: #6366f1;
       background: #1a1a2e;
     }
+    #drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; z-index: 2;
+    }
     #drop-zone .icon { font-size: 2rem; margin-bottom: 8px; }
     #drop-zone p { font-size: 0.85rem; color: #64748b; }
     #drop-zone strong { color: #a5b4fc; }
@@ -212,9 +215,8 @@
 
     <div>
       <div class="section-label">Input Image</div>
-      <!-- input lives outside the drop zone so child elements can't block clicks -->
-      <input type="file" id="file-input" accept="image/*" style="display:none" />
       <div id="drop-zone">
+        <input type="file" id="file-input" accept="image/*" />
         <div class="icon">🖼️</div>
         <p><strong>Click or drag</strong> an image here</p>
         <p>JPG, PNG, WEBP …</p>
@@ -388,8 +390,6 @@ function showPreview(file) {
 fileInput.addEventListener('change', e => {
   if (e.target.files[0]) showPreview(e.target.files[0]);
 });
-
-dropZone.addEventListener('click', () => fileInput.click());
 
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
