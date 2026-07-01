@@ -48,6 +48,12 @@ class DINOSingleImageTokenizer(BaseModule):
             images = images.unsqueeze(1)
 
         batch_size, n_input_views = images.shape[:2]
+
+        # Composite RGBA onto white background so the ViT receives RGB (3 channels)
+        if images.shape[2] == 4:
+            alpha = images[:, :, 3:4, :, :]
+            images = images[:, :, :3, :, :] * alpha + (1.0 - alpha)
+
         images = (images - self.image_mean) / self.image_std
         out = self.model(
             rearrange(images, "B N C H W -> (B N) C H W"), interpolate_pos_encoding=True
