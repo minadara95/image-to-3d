@@ -379,7 +379,22 @@ function resetCamera() {
 // ── Loaders ───────────────────────────────────────────────────────────────────
 function loadGLB(url) {
   if (currentObject) { scene.remove(currentObject); currentObject = null; }
-  new GLTFLoader().load(url, gltf => fitAndShow(gltf.scene));
+  new GLTFLoader().load(url, gltf => {
+    gltf.scene.traverse(node => {
+      if (!node.isMesh) return;
+      if (node.geometry.attributes.color) {
+        // TripoSR bakes lighting into vertex colors — MeshBasicMaterial shows
+        // them as-is without directional lights washing them out or darkening them.
+        node.material = new THREE.MeshBasicMaterial({
+          vertexColors: true,
+          side: THREE.DoubleSide,
+        });
+      } else {
+        node.material.side = THREE.DoubleSide;
+      }
+    });
+    fitAndShow(gltf.scene);
+  });
 }
 
 function loadOBJ(objUrl, mtlUrl) {
