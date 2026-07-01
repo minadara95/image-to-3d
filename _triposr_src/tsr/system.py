@@ -23,6 +23,34 @@ from .utils import (
 )
 
 
+def _remap_image_tokenizer_keys(state_dict: dict) -> dict:
+    """
+    The stabilityai/TripoSR checkpoint uses the HuggingFace ViTModel naming
+    (encoder.layer.X.attention.attention.query/key/value / intermediate.dense / output.dense).
+    The bundled tsr code was later refactored to a custom ViT with different key names
+    (layers.X.attention.q_proj/k_proj/v_proj / mlp.fc1 / mlp.fc2).
+    This function remaps the checkpoint keys so load_state_dict succeeds.
+    """
+    import re
+    new_sd = {}
+    for k, v in state_dict.items():
+        # Only touch image_tokenizer keys that need renaming
+        if "image_tokenizer.model.encoder.layer." in k:
+            k = re.sub(r"image_tokenizer\.model\.encoder\.layer\.(\d+)\.",
+                       r"image_tokenizer.model.layers.\1.", k)
+            k = k.replace(".attention.attention.query.", ".attention.q_proj.")
+            k = k.replace(".attention.attention.key.",   ".attention.k_proj.")
+            k = k.replace(".attention.attention.value.", ".attention.v_proj.")
+            k = k.replace(".attention.output.dense.",    ".attention.o_proj.")
+            k = k.replace(".intermediate.dense.",        ".mlp.fc1.")
+            # .output.dense. appears in both attention output (already remapped above)
+            # and in the FFN output — only remap the FFN one (no .attention. prefix)
+            if ".output.dense." in k:
+                k = k.replace(".output.dense.", ".mlp.fc2.")
+        new_sd[k] = v
+    return new_sd
+
+
 class TSR(BaseModule):
     @dataclass
     class Config(BaseModule.Config):
@@ -67,6 +95,7 @@ class TSR(BaseModule):
         OmegaConf.resolve(cfg)
         model = cls(cfg)
         ckpt = torch.load(weight_path, map_location="cpu")
+        ckpt = _remap_image_tokenizer_keys(ckpt)
         model.load_state_dict(ckpt)
         return model
 

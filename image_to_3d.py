@@ -68,7 +68,7 @@ def run_triposr(image: Image.Image, out_glb: Path, resolution: int = 256,
         scene_codes = model([processed], device=device)
 
     if progress_cb: progress_cb("Extracting mesh…")
-    meshes = model.extract_mesh(scene_codes, resolution=resolution, threshold=25.0)
+    meshes = model.extract_mesh(scene_codes, has_vertex_color=True, resolution=resolution, threshold=25.0)
 
     mesh = meshes[0]
     mesh.export(str(out_glb))
