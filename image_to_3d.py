@@ -35,33 +35,78 @@ def _ensure_triposr_path():
         sys.path.insert(0, str(triposr_src))
 
 
+_triposr_model = None  # module-level cache so we load weights only once
+
+
+def _get_triposr_model(device):
+    global _triposr_model
+    if _triposr_model is None:
+        _ensure_triposr_path()
+        from tsr.system import TSR
+        _triposr_model = TSR.from_pretrained(
+            "stabilityai/TripoSR",
+            config_name="config.yaml",
+            weight_name="model.ckpt",
+        )
+        _triposr_model.renderer.set_chunk_size(131072)
+        _triposr_model.to(device)
+        _triposr_model.eval()
+    return _triposr_model
+
+
+def _remove_background_robust(image: Image.Image) -> Image.Image:
+    """
+    Remove background with the best available rembg model.
+    Tries birefnet-general first (best quality), falls back to u2net.
+    Returns RGBA image; raises RuntimeError if segmentation looks bad
+    (foreground covers >80% of pixels — background wasn't removed).
+    """
+    import rembg
+    import numpy as np
+
+    for model_name in ("birefnet-general", "u2net"):
+        try:
+            session = rembg.new_session(model_name)
+            result = rembg.remove(image, session=session)
+            break
+        except Exception:
+            result = rembg.remove(image)
+            break
+
+    # Sanity-check: if almost no background was removed, TripoSR will just
+    # reconstruct a flat rectangle — better to fall back to depth-map.
+    arr = np.array(result)
+    alpha = arr[:, :, 3]
+    foreground_ratio = (alpha > 10).sum() / alpha.size
+    if foreground_ratio > 0.75:
+        raise RuntimeError(
+            "Background removal kept >75 % of the image as foreground — "
+            "the subject could not be isolated (try a photo with a plain, "
+            "contrasting background). Falling back to depth-map."
+        )
+    return result
+
+
 def run_triposr(image: Image.Image, out_glb: Path, resolution: int = 256,
                 progress_cb=None) -> None:
     """
     Generate a full 3D mesh with TripoSR and export it as a GLB file.
 
     Raises ImportError if TripoSR / rembg are not installed.
+    Raises RuntimeError if background removal fails (caller should fall back).
     """
     _ensure_triposr_path()
     import torch
-    from tsr.system import TSR
-    from tsr.utils import remove_background, resize_foreground
+    from tsr.utils import resize_foreground
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if progress_cb: progress_cb("Loading TripoSR model…")
-    model = TSR.from_pretrained(
-        "stabilityai/TripoSR",
-        config_name="config.yaml",
-        weight_name="model.ckpt",
-    )
-    model.renderer.set_chunk_size(131072)
-    model.to(device)
-    model.eval()
+    model = _get_triposr_model(device)
 
     if progress_cb: progress_cb("Removing background…")
-    processed = remove_background(image)
-    processed = resize_foreground(processed, 0.85)
+    processed = _remove_background_robust(image)
+    processed = resize_foreground(Image.fromarray(np.array(processed)), 0.85)
 
     if progress_cb: progress_cb("Generating 3D geometry…")
     with torch.no_grad():

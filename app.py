@@ -50,6 +50,8 @@ def run_conversion(job_id: str, img_path: Path, depth_scale: float, resolution: 
 
         except ImportError:
             _set(job_id, message="TripoSR not found — using depth-map fallback…")
+        except RuntimeError as e:
+            _set(job_id, message=f"TripoSR skipped ({e}) — using depth-map fallback…")
 
         # ── Depth-map fallback ───────────────────────────────────────────────
         from image_to_3d import run_depthmap
